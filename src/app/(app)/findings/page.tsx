@@ -92,6 +92,7 @@ export default function FindingsPage() {
       reportUrl: (fd.get("reportUrl") as string) || undefined,
       poc: (fd.get("poc") as string) || undefined,
       images: images.length > 0 ? JSON.stringify(images) : undefined,
+      tags: (fd.get("tags") as string) || undefined,
     };
 
     startTransition(async () => {
@@ -188,6 +189,11 @@ export default function FindingsPage() {
                     <span className="text-xs text-text-muted">
                       {f.target?.name}
                     </span>
+                    {f.tags && f.tags.split(",").map((tag) => (
+                      <Badge key={tag.trim()} className="bg-accent-purple/20 text-accent-purple border-accent-purple/30">
+                        {tag.trim()}
+                      </Badge>
+                    ))}
                   </div>
                   {imgs.length > 0 && (
                     <div className="flex gap-2 mt-2">
@@ -337,6 +343,15 @@ export default function FindingsPage() {
               placeholder="Steps to reproduce..."
               rows={5}
               defaultValue={editing?.poc || ""}
+            />
+          </div>
+          <div>
+            <Label htmlFor="tags">Tags</Label>
+            <Input
+              id="tags"
+              name="tags"
+              placeholder="needs-retest, escalatable, collab (comma-separated)"
+              defaultValue={editing?.tags || ""}
             />
           </div>
           <div>

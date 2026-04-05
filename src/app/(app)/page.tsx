@@ -72,16 +72,17 @@ export default function DashboardPage() {
         <StatCard
           label="Findings"
           value={stats.totalFindings}
-          sub={`across ${stats.totalTargets} targets`}
+          sub={`${stats.duplicates} duplicate${stats.duplicates !== 1 ? "s" : ""}`}
+        />
+        <StatCard
+          label="Acceptance Rate"
+          value={`${stats.acceptanceRate}%`}
+          sub={`avg bounty ${formatCurrency(stats.avgBounty)}`}
         />
         <StatCard
           label="Active Targets"
           value={stats.activeTargets}
           sub={`of ${stats.totalTargets} total`}
-        />
-        <StatCard
-          label="Journal Entries"
-          value={stats.journalEntries}
         />
       </div>
 
@@ -216,9 +217,10 @@ export default function DashboardPage() {
           {stats.recentFindings.length > 0 ? (
             <div className="space-y-3">
               {stats.recentFindings.map((f) => (
-                <div
+                <a
                   key={f.id}
-                  className="flex items-center justify-between py-2 border-b border-white/5 last:border-0"
+                  href={`/findings/${f.id}`}
+                  className="flex items-center justify-between py-2 border-b border-white/5 last:border-0 hover:bg-white/5 rounded px-2 -mx-2 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{f.title}</p>
@@ -241,7 +243,7 @@ export default function DashboardPage() {
                       {formatDate(f.foundAt)}
                     </p>
                   </div>
-                </div>
+                </a>
               ))}
             </div>
           ) : (
@@ -251,6 +253,27 @@ export default function DashboardPage() {
           )}
         </Card>
       </div>
+
+      {/* Recent journal activity */}
+      {stats.recentJournals && stats.recentJournals.length > 0 && (
+        <Card className="mt-4">
+          <h3 className="font-semibold mb-4">Recent Journal Activity</h3>
+          <div className="space-y-3">
+            {stats.recentJournals.map((j) => (
+              <div key={j.id} className="flex gap-3 py-2 border-b border-white/5 last:border-0">
+                <div className="w-1 rounded-full bg-accent-purple shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-text-secondary truncate">{j.content.slice(0, 120)}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-text-muted">{formatDate(j.date)}</span>
+                    {j.target && <span className="text-xs text-accent-cyan">{j.target.name}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

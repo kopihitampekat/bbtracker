@@ -88,6 +88,7 @@ export async function createFinding(data: {
   reportUrl?: string;
   reportedAt?: Date | null;
   images?: string;
+  tags?: string;
 }) {
   await prisma.finding.create({ data });
   revalidatePath("/findings");
@@ -110,6 +111,7 @@ export async function updateFinding(
     triagedAt?: Date | null;
     resolvedAt?: Date | null;
     images?: string;
+    tags?: string;
   }
 ) {
   await prisma.finding.update({ where: { id }, data });
@@ -341,6 +343,22 @@ export async function getDashboardStats() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, amount]) => ({ month, amount }));
 
+  // Acceptance rate
+  const reported = findings.filter((f) => !["draft"].includes(f.status));
+  const accepted = findings.filter((f) => ["accepted", "resolved"].includes(f.status));
+  const acceptanceRate = reported.length > 0 ? Math.round((accepted.length / reported.length) * 100) : 0;
+
+  // Avg bounty
+  const paidFindings = findings.filter((f) => f.bounty > 0);
+  const avgBounty = paidFindings.length > 0 ? totalBounty / paidFindings.length : 0;
+
+  // Recent activity (mixed findings + journals)
+  const recentJournals = await prisma.journal.findMany({
+    orderBy: { date: "desc" },
+    take: 5,
+    include: { target: { select: { name: true } } },
+  });
+
   return {
     totalTargets: targets.length,
     activeTargets: targets.filter((t) => t.status === "hunting" || t.status === "recon").length,
@@ -353,5 +371,117 @@ export async function getDashboardStats() {
     recentFindings,
     chartData,
     statusBreakdown: earningsByMonth,
+    acceptanceRate,
+    avgBounty,
+    recentJournals,
+    duplicates: findings.filter((f) => f.status === "duplicate").length,
+  };
+}
+
+// ==================== ANALYTICS ====================
+
+export async function getAnalytics() {
+  const [targets, findings] = await Promise.all([
+    prisma.target.findMany({
+      include: { findings: true },
+    }),
+    prisma.finding.findMany({
+      include: { target: { select: { name: true, platform: true } } },
+    }),
+  ]);
+
+  // Per-target stats
+  const targetStats = targets
+    .map((t) => {
+      const f = t.findings;
+      const accepted = f.filter((x) => ["accepted", "resolved"].includes(x.status));
+      const totalBounty = f.reduce((sum, x) => sum + x.bounty, 0);
+      const reported = f.filter((x) => x.status !== "draft");
+      return {
+        id: t.id,
+        name: t.name,
+        platform: t.platform,
+        totalFindings: f.length,
+        accepted: accepted.length,
+        duplicates: f.filter((x) => x.status === "duplicate").length,
+        successRate: reported.length > 0 ? Math.round((accepted.length / reported.length) * 100) : 0,
+        totalBounty,
+        avgBounty: accepted.length > 0 ? Math.round(totalBounty / accepted.length) : 0,
+      };
+    })
+    .sort((a, b) => b.totalBounty - a.totalBounty);
+
+  // Per vuln type stats
+  const vulnStats = findings.reduce((acc, f) => {
+    if (!acc[f.vulnType]) {
+      acc[f.vulnType] = { count: 0, accepted: 0, bounty: 0, avgBounty: 0 };
+    }
+    acc[f.vulnType].count++;
+    if (["accepted", "resolved"].includes(f.status)) {
+      acc[f.vulnType].accepted++;
+      acc[f.vulnType].bounty += f.bounty;
+    }
+    return acc;
+  }, {} as Record<string, { count: number; accepted: number; bounty: number; avgBounty: number }>);
+
+  Object.values(vulnStats).forEach((v) => {
+    v.avgBounty = v.accepted > 0 ? Math.round(v.bounty / v.accepted) : 0;
+  });
+
+  const vulnTypeStats = Object.entries(vulnStats)
+    .map(([type, stats]) => ({ type, ...stats }))
+    .sort((a, b) => b.bounty - a.bounty);
+
+  // Per platform stats
+  const platformStats = findings.reduce((acc, f) => {
+    const platform = f.target?.platform || "unknown";
+    if (!acc[platform]) acc[platform] = { count: 0, bounty: 0, accepted: 0 };
+    acc[platform].count++;
+    if (["accepted", "resolved"].includes(f.status)) {
+      acc[platform].accepted++;
+      acc[platform].bounty += f.bounty;
+    }
+    return acc;
+  }, {} as Record<string, { count: number; bounty: number; accepted: number }>);
+
+  // Time to triage (avg days from reported to triaged)
+  const triagedFindings = findings.filter((f) => f.reportedAt && f.triagedAt);
+  const avgTriageDays = triagedFindings.length > 0
+    ? Math.round(
+        triagedFindings.reduce((sum, f) => {
+          const diff = new Date(f.triagedAt!).getTime() - new Date(f.reportedAt!).getTime();
+          return sum + diff / (1000 * 60 * 60 * 24);
+        }, 0) / triagedFindings.length
+      )
+    : null;
+
+  // Monthly finding count for trend
+  const monthlyFindings = findings.reduce((acc, f) => {
+    const month = new Date(f.foundAt).toISOString().slice(0, 7);
+    acc[month] = (acc[month] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const findingTrend = Object.entries(monthlyFindings)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, count]) => ({ month, count }));
+
+  // Severity distribution with bounty
+  const severityStats = findings.reduce((acc, f) => {
+    if (!acc[f.severity]) acc[f.severity] = { count: 0, bounty: 0 };
+    acc[f.severity].count++;
+    acc[f.severity].bounty += f.bounty;
+    return acc;
+  }, {} as Record<string, { count: number; bounty: number }>);
+
+  return {
+    targetStats,
+    vulnTypeStats,
+    platformStats,
+    avgTriageDays,
+    findingTrend,
+    severityStats,
+    totalFindings: findings.length,
+    totalBounty: findings.reduce((sum, f) => sum + f.bounty, 0),
   };
 }

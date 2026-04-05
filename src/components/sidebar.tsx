@@ -8,6 +8,7 @@ import {
   Bug,
   BookOpen,
   ClipboardCheck,
+  BarChart3,
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ const links = [
   { href: "/findings", label: "Findings", icon: Bug },
   { href: "/checklists", label: "Checklists", icon: ClipboardCheck },
   { href: "/journal", label: "Journal", icon: BookOpen },
+  { href: "/stats", label: "Statistics", icon: BarChart3 },
 ];
 
 export function Sidebar() {
