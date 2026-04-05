@@ -18,8 +18,9 @@ model Target {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  findings Finding[]
-  journals Journal[]
+  findings           Finding[]
+  journals           Journal[]
+  checklistInstances ChecklistInstance[]
 }
 
 model Finding {
@@ -41,6 +42,30 @@ model Finding {
   images      String?  // JSON array of image URLs from Vercel Blob
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Checklist {
+  id        String   @id @default(cuid())
+  name      String
+  vulnType  String?  // linked vuln type, or null for general
+  items     String   // JSON array of checklist item strings
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  instances ChecklistInstance[]
+}
+
+model ChecklistInstance {
+  id          String    @id @default(cuid())
+  checklistId String
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  targetId    String
+  target      Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  checked     String    @default("[]") // JSON array of booleans
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([checklistId, targetId])
 }
 
 model Journal {

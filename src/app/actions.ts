@@ -150,6 +150,120 @@ export async function deleteJournal(id: string) {
   revalidatePath("/journal");
 }
 
+// ==================== CHECKLISTS ====================
+
+export async function getChecklists() {
+  return prisma.checklist.findMany({
+    orderBy: { updatedAt: "desc" },
+    include: { _count: { select: { instances: true } } },
+  });
+}
+
+export async function createChecklist(data: {
+  name: string;
+  vulnType?: string;
+  items: string; // JSON array
+}) {
+  await prisma.checklist.create({ data });
+  revalidatePath("/checklists");
+}
+
+export async function updateChecklist(
+  id: string,
+  data: { name?: string; vulnType?: string; items?: string }
+) {
+  await prisma.checklist.update({ where: { id }, data });
+  revalidatePath("/checklists");
+}
+
+export async function deleteChecklist(id: string) {
+  await prisma.checklist.delete({ where: { id } });
+  revalidatePath("/checklists");
+}
+
+export async function getChecklistInstances(targetId: string) {
+  return prisma.checklistInstance.findMany({
+    where: { targetId },
+    include: { checklist: true },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+export async function assignChecklist(checklistId: string, targetId: string) {
+  await prisma.checklistInstance.upsert({
+    where: { checklistId_targetId: { checklistId, targetId } },
+    create: { checklistId, targetId, checked: "[]" },
+    update: {},
+  });
+  revalidatePath("/checklists");
+}
+
+export async function updateChecklistInstance(id: string, checked: string) {
+  await prisma.checklistInstance.update({
+    where: { id },
+    data: { checked },
+  });
+  revalidatePath("/checklists");
+}
+
+export async function deleteChecklistInstance(id: string) {
+  await prisma.checklistInstance.delete({ where: { id } });
+  revalidatePath("/checklists");
+}
+
+// ==================== FINDING DETAIL ====================
+
+export async function getFinding(id: string) {
+  return prisma.finding.findUnique({
+    where: { id },
+    include: { target: true },
+  });
+}
+
+// ==================== SEARCH ====================
+
+export async function globalSearch(query: string) {
+  if (!query || query.length < 2) return { targets: [], findings: [], journals: [] };
+
+  const q = `%${query}%`;
+
+  const [targets, findings, journals] = await Promise.all([
+    prisma.target.findMany({
+      where: {
+        OR: [
+          { name: { contains: query, mode: "insensitive" } },
+          { scope: { contains: query, mode: "insensitive" } },
+          { notes: { contains: query, mode: "insensitive" } },
+        ],
+      },
+      take: 10,
+    }),
+    prisma.finding.findMany({
+      where: {
+        OR: [
+          { title: { contains: query, mode: "insensitive" } },
+          { poc: { contains: query, mode: "insensitive" } },
+          { endpoint: { contains: query, mode: "insensitive" } },
+        ],
+      },
+      include: { target: { select: { name: true } } },
+      take: 10,
+    }),
+    prisma.journal.findMany({
+      where: {
+        OR: [
+          { content: { contains: query, mode: "insensitive" } },
+          { tags: { contains: query, mode: "insensitive" } },
+        ],
+      },
+      include: { target: { select: { name: true } } },
+      take: 10,
+    }),
+  ]);
+
+  return { targets, findings, journals };
+}
+
 // ==================== DASHBOARD ====================
 
 export async function getDashboardStats() {

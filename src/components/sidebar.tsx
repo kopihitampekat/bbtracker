@@ -7,14 +7,17 @@ import {
   Target,
   Bug,
   BookOpen,
+  ClipboardCheck,
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchBar } from "@/components/search";
 
 const links = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/targets", label: "Targets", icon: Target },
   { href: "/findings", label: "Findings", icon: Bug },
+  { href: "/checklists", label: "Checklists", icon: ClipboardCheck },
   { href: "/journal", label: "Journal", icon: BookOpen },
 ];
 
@@ -29,9 +32,12 @@ export function Sidebar() {
           <span className="text-lg font-bold tracking-tight">BB Tracker</span>
         </Link>
       </div>
+      <div className="px-3 pt-3">
+        <SearchBar />
+      </div>
       <nav className="flex-1 p-3 space-y-1">
         {links.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           return (
             <Link
               key={href}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { Plus, Bug, Trash2, Pencil, ExternalLink, ImageIcon } from "lucide-react";
 import {
   getFindings,
@@ -167,7 +168,9 @@ export default function FindingsPage() {
               <Card key={f.id} className="flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-medium truncate">{f.title}</h3>
+                    <Link href={`/findings/${f.id}`} className="font-medium truncate hover:text-accent-green transition-colors">
+                      {f.title}
+                    </Link>
                     {imgs.length > 0 && (
                       <ImageIcon className="w-3.5 h-3.5 text-text-muted shrink-0" />
                     )}
