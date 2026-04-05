@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SearchBar } from "@/components/search";
+import { UserButton } from "@clerk/nextjs";
 
 const links = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -55,8 +56,9 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-4 border-t border-white/5 text-xs text-text-muted">
-        BB Tracker v0.1
+      <div className="p-4 border-t border-white/5 flex items-center justify-between">
+        <span className="text-xs text-text-muted">BB Tracker v0.1</span>
+        <UserButton />
       </div>
     </aside>
   );

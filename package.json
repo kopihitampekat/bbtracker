@@ -12,6 +12,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.0.8",
     "@prisma/client": "^6.5.0",
     "@vercel/blob": "^2.3.3",
     "clsx": "^2.1.1",
