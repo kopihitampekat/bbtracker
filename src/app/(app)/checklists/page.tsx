@@ -8,9 +8,8 @@ import {
   Pencil,
   ChevronDown,
   ChevronRight,
-  CheckSquare,
-  Square,
   Target,
+  X,
 } from "lucide-react";
 import {
   getChecklists,
@@ -19,7 +18,7 @@ import {
   updateChecklist,
   deleteChecklist,
   assignChecklist,
-  getChecklistInstances,
+  getChecklistsByTarget,
   updateChecklistInstance,
   deleteChecklistInstance,
 } from "@/app/actions";
@@ -33,11 +32,11 @@ import {
   Label,
   EmptyState,
 } from "@/components/ui";
-import { VULN_TYPES } from "@/lib/utils";
+import { cn, VULN_TYPES } from "@/lib/utils";
 
 type ChecklistWithCount = Awaited<ReturnType<typeof getChecklists>>[number];
 type TargetOption = Awaited<ReturnType<typeof getTargets>>[number];
-type Instance = Awaited<ReturnType<typeof getChecklistInstances>>[number];
+type InstanceWithChecklist = Awaited<ReturnType<typeof getChecklistsByTarget>>[number];
 
 const DEFAULT_TEMPLATES: Record<string, string[]> = {
   xss: [
@@ -92,16 +91,21 @@ const DEFAULT_TEMPLATES: Record<string, string[]> = {
   ],
 };
 
+function parseJSON<T>(str: string, fallback: T): T {
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
 export default function ChecklistsPage() {
   const [checklists, setChecklists] = useState<ChecklistWithCount[]>([]);
   const [targets, setTargets] = useState<TargetOption[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ChecklistWithCount | null>(null);
   const [itemsText, setItemsText] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [instances, setInstances] = useState<Instance[]>([]);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignChecklistId, setAssignChecklistId] = useState("");
+  // Active hunting view
+  const [activeTargetId, setActiveTargetId] = useState<string>("");
+  const [instances, setInstances] = useState<InstanceWithChecklist[]>([]);
   const [isPending, startTransition] = useTransition();
 
   const load = () => {
@@ -114,13 +118,49 @@ export default function ChecklistsPage() {
 
   useEffect(() => { load(); }, []);
 
+  const loadInstances = (targetId: string) => {
+    if (!targetId) { setInstances([]); return; }
+    startTransition(async () => {
+      const data = await getChecklistsByTarget(targetId);
+      setInstances(data);
+    });
+  };
+
+  useEffect(() => {
+    loadInstances(activeTargetId);
+  }, [activeTargetId]);
+
+  const toggleCheck = (instance: InstanceWithChecklist, index: number) => {
+    const items = parseJSON<string[]>(instance.checklist.items, []);
+    const checked = parseJSON<boolean[]>(instance.checked, new Array(items.length).fill(false));
+    checked[index] = !checked[index];
+
+    // Optimistic update
+    setInstances((prev) =>
+      prev.map((inst) =>
+        inst.id === instance.id ? { ...inst, checked: JSON.stringify(checked) } : inst
+      )
+    );
+
+    startTransition(async () => {
+      await updateChecklistInstance(instance.id, JSON.stringify(checked));
+    });
+  };
+
+  const handleRemoveInstance = (id: string) => {
+    if (!confirm("Remove this checklist from target?")) return;
+    startTransition(async () => {
+      await deleteChecklistInstance(id);
+      loadInstances(activeTargetId);
+      load();
+    });
+  };
+
   const openModal = (cl: ChecklistWithCount | null) => {
     setEditing(cl);
     if (cl) {
-      try {
-        const items = JSON.parse(cl.items) as string[];
-        setItemsText(items.join("\n"));
-      } catch { setItemsText(""); }
+      const items = parseJSON<string[]>(cl.items, []);
+      setItemsText(items.join("\n"));
     } else {
       setItemsText("");
     }
@@ -141,49 +181,26 @@ export default function ChecklistsPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const items = itemsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
+    const items = itemsText.split("\n").map((s) => s.trim()).filter(Boolean);
     const data = {
       name: fd.get("name") as string,
       vulnType: (fd.get("vulnType") as string) || undefined,
       items: JSON.stringify(items),
     };
-
     startTransition(async () => {
-      if (editing) {
-        await updateChecklist(editing.id, data);
-      } else {
-        await createChecklist(data);
-      }
+      if (editing) { await updateChecklist(editing.id, data); }
+      else { await createChecklist(data); }
       closeModal();
       load();
     });
   };
 
   const handleDelete = (id: string) => {
-    if (!confirm("Delete this checklist?")) return;
+    if (!confirm("Delete this checklist template?")) return;
     startTransition(async () => {
       await deleteChecklist(id);
       load();
     });
-  };
-
-  const toggleExpand = (id: string) => {
-    if (expandedId === id) {
-      setExpandedId(null);
-      setInstances([]);
-    } else {
-      setExpandedId(id);
-      // We don't have a target-specific view here, so we show the checklist items
-    }
-  };
-
-  const openAssign = (checklistId: string) => {
-    setAssignChecklistId(checklistId);
-    setAssignModalOpen(true);
   };
 
   const handleAssign = (e: React.FormEvent<HTMLFormElement>) => {
@@ -193,6 +210,7 @@ export default function ChecklistsPage() {
     startTransition(async () => {
       await assignChecklist(assignChecklistId, targetId);
       setAssignModalOpen(false);
+      if (activeTargetId === targetId) loadInstances(targetId);
       load();
     });
   };
@@ -203,45 +221,161 @@ export default function ChecklistsPage() {
         <div>
           <h1 className="text-2xl font-bold">Methodology Checklists</h1>
           <p className="text-text-muted text-sm mt-1">
-            Reusable checklists per vulnerability type
+            Track your hunting methodology per target
           </p>
         </div>
         <Button onClick={() => openModal(null)}>
-          <Plus className="w-4 h-4" /> New Checklist
+          <Plus className="w-4 h-4" /> New Template
         </Button>
       </div>
 
+      {/* Active Hunt View */}
+      <Card className="mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-5 h-5 text-accent-green" />
+          <h2 className="font-semibold">Hunt Mode</h2>
+        </div>
+        <div className="mb-4">
+          <Label>Select Target</Label>
+          <Select
+            value={activeTargetId}
+            onChange={(e) => setActiveTargetId(e.target.value)}
+          >
+            <option value="">Choose a target...</option>
+            {targets.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </Select>
+        </div>
+
+        {activeTargetId && instances.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-text-muted text-sm mb-3">No checklists assigned to this target</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setAssignChecklistId("");
+                setAssignModalOpen(true);
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" /> Assign Checklist
+            </Button>
+          </div>
+        )}
+
+        {activeTargetId && instances.length > 0 && (
+          <div className="space-y-4">
+            {instances.map((instance) => {
+              const items = parseJSON<string[]>(instance.checklist.items, []);
+              const checked = parseJSON<boolean[]>(instance.checked, new Array(items.length).fill(false));
+              const doneCount = checked.filter(Boolean).length;
+              const progress = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
+
+              return (
+                <div key={instance.id} className="border border-white/5 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-sm">{instance.checklist.name}</h3>
+                      {instance.checklist.vulnType && (
+                        <Badge className="bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30">
+                          {instance.checklist.vulnType}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={cn(
+                        "text-xs font-medium",
+                        progress === 100 ? "text-accent-green" : "text-text-muted"
+                      )}>
+                        {doneCount}/{items.length} ({progress}%)
+                      </span>
+                      <button
+                        onClick={() => handleRemoveInstance(instance.id)}
+                        className="text-text-muted hover:text-accent-red transition-colors"
+                        title="Remove from target"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-bg-tertiary rounded-full overflow-hidden mb-3">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-300",
+                        progress === 100 ? "bg-accent-green" : "bg-accent-cyan"
+                      )}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+
+                  {/* Checklist items */}
+                  <div className="space-y-1">
+                    {items.map((item, i) => (
+                      <button
+                        key={i}
+                        onClick={() => toggleCheck(instance, i)}
+                        className="flex items-center gap-2.5 w-full text-left py-1.5 px-2 rounded-md hover:bg-white/5 transition-colors group"
+                      >
+                        <div className={cn(
+                          "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                          checked[i]
+                            ? "bg-accent-green border-accent-green"
+                            : "border-white/20 group-hover:border-white/40"
+                        )}>
+                          {checked[i] && (
+                            <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className={cn(
+                          "text-sm transition-colors",
+                          checked[i] ? "text-text-muted line-through" : "text-text-secondary"
+                        )}>
+                          {item}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setAssignChecklistId("");
+                setAssignModalOpen(true);
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" /> Assign Another Checklist
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {/* Templates */}
+      <h2 className="font-semibold mb-3 text-text-secondary">Templates</h2>
       {checklists.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
-          title="No checklists yet"
-          description="Create your first methodology checklist"
+          title="No templates yet"
+          description="Create your first methodology checklist template"
         />
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {checklists.map((cl) => {
-            const items: string[] = (() => {
-              try { return JSON.parse(cl.items); } catch { return []; }
-            })();
-            const isExpanded = expandedId === cl.id;
-
+            const items = parseJSON<string[]>(cl.items, []);
             return (
-              <Card key={cl.id}>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => toggleExpand(cl.id)}
-                    className="text-text-muted hover:text-text-primary transition-colors"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                  </button>
-
-                  <div className="flex-1 min-w-0">
+              <Card key={cl.id} className="flex flex-col">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
                     <h3 className="font-medium">{cl.name}</h3>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-1">
                       {cl.vulnType && (
                         <Badge className="bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30">
                           {cl.vulnType}
@@ -250,15 +384,14 @@ export default function ChecklistsPage() {
                       <span className="text-xs text-text-muted">
                         {items.length} items
                       </span>
-                      <span className="text-xs text-text-muted">
-                        {cl._count.instances} target{cl._count.instances !== 1 ? "s" : ""} assigned
-                      </span>
                     </div>
                   </div>
-
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => openAssign(cl.id)}
+                      onClick={() => {
+                        setAssignChecklistId(cl.id);
+                        setAssignModalOpen(true);
+                      }}
                       className="p-1.5 text-text-muted hover:text-accent-green transition-colors"
                       title="Assign to target"
                     >
@@ -278,107 +411,63 @@ export default function ChecklistsPage() {
                     </button>
                   </div>
                 </div>
-
-                {isExpanded && (
-                  <div className="mt-3 pt-3 border-t border-white/5 space-y-1.5">
-                    {items.map((item, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm text-text-secondary">
-                        <Square className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="mt-auto pt-2 border-t border-white/5 text-xs text-text-muted">
+                  {cl._count.instances} target{cl._count.instances !== 1 ? "s" : ""} using this
+                </div>
               </Card>
             );
           })}
         </div>
       )}
 
-      {/* Create/Edit Checklist Modal */}
-      <Modal open={modalOpen} onClose={closeModal} title={editing ? "Edit Checklist" : "New Checklist"}>
+      {/* Create/Edit Template Modal */}
+      <Modal open={modalOpen} onClose={closeModal} title={editing ? "Edit Template" : "New Template"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="name">Name *</Label>
-            <Input
-              id="name"
-              name="name"
-              required
-              placeholder="e.g. XSS Hunting Methodology"
-              defaultValue={editing?.name}
-            />
+            <Input id="name" name="name" required placeholder="e.g. XSS Hunting Methodology" defaultValue={editing?.name} />
           </div>
           <div>
             <Label htmlFor="vulnType">Vulnerability Type</Label>
-            <Select
-              id="vulnType"
-              name="vulnType"
-              defaultValue={editing?.vulnType || ""}
-              onChange={(e) => {
-                if (!editing && e.target.value) handleTemplate(e.target.value);
-              }}
-            >
+            <Select id="vulnType" name="vulnType" defaultValue={editing?.vulnType || ""} onChange={(e) => { if (!editing && e.target.value) handleTemplate(e.target.value); }}>
               <option value="">General</option>
-              {VULN_TYPES.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
+              {VULN_TYPES.map((v) => (<option key={v} value={v}>{v}</option>))}
             </Select>
-            {!editing && (
-              <p className="text-xs text-text-muted mt-1">
-                Selecting a type will auto-fill a template
-              </p>
-            )}
+            {!editing && <p className="text-xs text-text-muted mt-1">Selecting a type will auto-fill a template</p>}
           </div>
           <div>
             <Label htmlFor="items">Checklist Items (one per line) *</Label>
-            <textarea
-              id="items"
-              value={itemsText}
-              onChange={(e) => setItemsText(e.target.value)}
-              required
-              placeholder={"Test all input fields\nCheck for reflected XSS\nTest stored XSS..."}
-              rows={10}
-              className="w-full rounded-lg bg-bg-tertiary border border-white/10 px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50 focus:ring-1 focus:ring-accent-green/20 transition-colors resize-y"
-            />
+            <textarea id="items" value={itemsText} onChange={(e) => setItemsText(e.target.value)} required placeholder={"Test all input fields\nCheck for reflected XSS\nTest stored XSS..."} rows={10} className="w-full rounded-lg bg-bg-tertiary border border-white/10 px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50 focus:ring-1 focus:ring-accent-green/20 transition-colors resize-y" />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {editing ? "Update" : "Create"}
-            </Button>
+            <Button type="button" variant="secondary" onClick={closeModal}>Cancel</Button>
+            <Button type="submit" disabled={isPending}>{editing ? "Update" : "Create"}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Assign to Target Modal */}
-      <Modal
-        open={assignModalOpen}
-        onClose={() => setAssignModalOpen(false)}
-        title="Assign to Target"
-      >
+      <Modal open={assignModalOpen} onClose={() => setAssignModalOpen(false)} title="Assign Checklist to Target">
         <form onSubmit={handleAssign} className="space-y-4">
+          {!assignChecklistId && (
+            <div>
+              <Label>Checklist *</Label>
+              <Select name="checklistIdSelect" required onChange={(e) => setAssignChecklistId(e.target.value)}>
+                <option value="">Select a checklist</option>
+                {checklists.map((cl) => (<option key={cl.id} value={cl.id}>{cl.name}</option>))}
+              </Select>
+            </div>
+          )}
           <div>
             <Label htmlFor="targetId">Target *</Label>
-            <Select id="targetId" name="targetId" required>
+            <Select id="targetId" name="targetId" required defaultValue={activeTargetId}>
               <option value="">Select a target</option>
-              {targets.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              {targets.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
             </Select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setAssignModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              Assign
-            </Button>
+            <Button type="button" variant="secondary" onClick={() => setAssignModalOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={isPending}>Assign</Button>
           </div>
         </form>
       </Modal>

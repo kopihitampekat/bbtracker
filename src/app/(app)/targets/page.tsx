@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { Plus, Target as TargetIcon, Trash2, Pencil, ExternalLink } from "lucide-react";
 import {
   getTargets,
@@ -110,7 +111,7 @@ export default function TargetsPage() {
             <Card key={t.id} className="flex flex-col">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate">{t.name}</h3>
+                  <Link href={`/targets/${t.id}`} className="font-semibold truncate hover:text-accent-green transition-colors block">{t.name}</Link>
                   <p className="text-text-muted text-xs capitalize mt-0.5">
                     {t.platform}
                   </p>

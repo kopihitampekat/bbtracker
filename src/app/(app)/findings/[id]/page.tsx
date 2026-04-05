@@ -10,9 +10,11 @@ import {
   CheckCircle2,
   CircleDot,
   AlertCircle,
+  Copy,
+  Download,
 } from "lucide-react";
 import { getFinding } from "@/app/actions";
-import { Card, Badge } from "@/components/ui";
+import { Card, Badge, Button } from "@/components/ui";
 import {
   SEVERITY_COLORS,
   STATUS_COLORS,
@@ -56,16 +58,61 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
   const images = parseImages(finding.images);
 
+  const generateMarkdown = () => {
+    let md = `# ${finding.title}\n\n`;
+    md += `**Severity:** ${finding.severity}\n`;
+    md += `**Type:** ${finding.vulnType}\n`;
+    md += `**Status:** ${finding.status}\n`;
+    md += `**Target:** ${finding.target.name}\n`;
+    if (finding.endpoint) md += `**Endpoint:** \`${finding.endpoint}\`\n`;
+    if (finding.bounty > 0) md += `**Bounty:** ${formatCurrency(finding.bounty)}\n`;
+    md += `**Found:** ${formatDate(finding.foundAt)}\n`;
+    if (finding.reportedAt) md += `**Reported:** ${formatDate(finding.reportedAt)}\n`;
+    if (finding.triagedAt) md += `**Triaged:** ${formatDate(finding.triagedAt)}\n`;
+    if (finding.resolvedAt) md += `**Resolved:** ${formatDate(finding.resolvedAt)}\n`;
+    if (finding.reportUrl) md += `**Report URL:** ${finding.reportUrl}\n`;
+    if (finding.poc) md += `\n## Proof of Concept\n\n${finding.poc}\n`;
+    if (images.length > 0) {
+      md += `\n## Evidence\n\n`;
+      images.forEach((url, i) => { md += `![Evidence ${i + 1}](${url})\n`; });
+    }
+    return md;
+  };
+
+  const copyMarkdown = () => {
+    navigator.clipboard.writeText(generateMarkdown());
+  };
+
+  const downloadMarkdown = () => {
+    const blob = new Blob([generateMarkdown()], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${finding.title.toLowerCase().replace(/\s+/g, "-")}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="max-w-4xl">
       {/* Header */}
       <div className="mb-6">
-        <Link
-          href="/findings"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary transition-colors mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Findings
-        </Link>
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            href="/findings"
+            className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-text-primary transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Findings
+          </Link>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={copyMarkdown}>
+              <Copy className="w-3.5 h-3.5" /> Copy MD
+            </Button>
+            <Button size="sm" variant="secondary" onClick={downloadMarkdown}>
+              <Download className="w-3.5 h-3.5" /> Export
+            </Button>
+          </div>
+        </div>
 
         <div className="flex items-start justify-between">
           <div>

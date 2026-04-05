@@ -19,6 +19,19 @@ export async function getTarget(id: string) {
   });
 }
 
+export async function getTargetDetail(id: string) {
+  return prisma.target.findUnique({
+    where: { id },
+    include: {
+      findings: { orderBy: { createdAt: "desc" } },
+      checklistInstances: {
+        include: { checklist: true },
+        orderBy: { updatedAt: "desc" },
+      },
+    },
+  });
+}
+
 export async function createTarget(data: {
   name: string;
   platform: string;
@@ -182,6 +195,14 @@ export async function deleteChecklist(id: string) {
 }
 
 export async function getChecklistInstances(targetId: string) {
+  return prisma.checklistInstance.findMany({
+    where: { targetId },
+    include: { checklist: true },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+export async function getChecklistsByTarget(targetId: string) {
   return prisma.checklistInstance.findMany({
     where: { targetId },
     include: { checklist: true },
