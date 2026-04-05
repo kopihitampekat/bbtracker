@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Target {
+  id        String   @id @default(cuid())
+  name      String
+  platform  String   @default("independent") // hackerone, bugcrowd, intigriti, independent
+  url       String?
+  scope     String?  // markdown text for scope details
+  status    String   @default("recon") // recon, hunting, reported, idle
+  notes     String?  // recon notes, markdown
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  findings Finding[]
+  journals Journal[]
+}
+
+model Finding {
+  id          String   @id @default(cuid())
+  title       String
+  targetId    String
+  target      Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  vulnType    String   // xss, sqli, idor, ssrf, rce, lfi, open-redirect, info-disclosure, etc
+  severity    String   @default("medium") // critical, high, medium, low, info
+  status      String   @default("draft") // draft, reported, triaged, accepted, resolved, duplicate, na
+  bounty      Float    @default(0)
+  poc         String?  // proof of concept steps, markdown
+  endpoint    String?  // affected endpoint/url
+  reportUrl   String?  // link to report on platform
+  foundAt     DateTime @default(now())
+  reportedAt  DateTime?
+  triagedAt   DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Journal {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  targetId  String?
+  target    Target?  @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  content   String   // markdown
+  tags      String?  // comma-separated tags
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
