@@ -20,16 +20,23 @@ import {
   Label,
   EmptyState,
 } from "@/components/ui";
+import { ImageUpload } from "@/components/image-upload";
 import { formatDate } from "@/lib/utils";
 
 type JournalEntry = Awaited<ReturnType<typeof getJournals>>[number];
 type TargetOption = Awaited<ReturnType<typeof getTargets>>[number];
+
+function parseImages(images: string | null | undefined): string[] {
+  if (!images) return [];
+  try { return JSON.parse(images); } catch { return []; }
+}
 
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [targets, setTargets] = useState<TargetOption[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<JournalEntry | null>(null);
+  const [images, setImages] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
 
   const load = () => {
@@ -42,6 +49,18 @@ export default function JournalPage() {
 
   useEffect(() => { load(); }, []);
 
+  const openModal = (entry: JournalEntry | null) => {
+    setEditing(entry);
+    setImages(entry ? parseImages(entry.images) : []);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setImages([]);
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -51,6 +70,7 @@ export default function JournalPage() {
       targetId: targetId || null,
       tags: (fd.get("tags") as string) || undefined,
       date: new Date((fd.get("date") as string) || new Date().toISOString()),
+      images: images.length > 0 ? JSON.stringify(images) : undefined,
     };
 
     startTransition(async () => {
@@ -59,8 +79,7 @@ export default function JournalPage() {
       } else {
         await createJournal(data);
       }
-      setModalOpen(false);
-      setEditing(null);
+      closeModal();
       load();
     });
   };
@@ -82,12 +101,7 @@ export default function JournalPage() {
             Document your daily hunting journey
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setModalOpen(true);
-          }}
-        >
+        <Button onClick={() => openModal(null)}>
           <Plus className="w-4 h-4" /> New Entry
         </Button>
       </div>
@@ -100,67 +114,74 @@ export default function JournalPage() {
         />
       ) : (
         <div className="space-y-4">
-          {entries.map((entry) => (
-            <Card key={entry.id}>
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="text-sm text-text-muted">
-                    {formatDate(entry.date)}
-                  </p>
-                  {entry.target && (
-                    <p className="text-xs text-accent-cyan mt-0.5">
-                      {entry.target.name}
+          {entries.map((entry) => {
+            const imgs = parseImages(entry.images);
+            return (
+              <Card key={entry.id}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-sm text-text-muted">
+                      {formatDate(entry.date)}
                     </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setEditing(entry);
-                      setModalOpen(true);
-                    }}
-                    className="p-1.5 text-text-muted hover:text-text-primary transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(entry.id)}
-                    className="p-1.5 text-text-muted hover:text-accent-red transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
-                {entry.content}
-              </div>
-
-              {entry.tags && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
-                  {entry.tags.split(",").map((tag) => (
-                    <Badge
-                      key={tag.trim()}
-                      className="bg-accent-purple/20 text-accent-purple border-accent-purple/30"
+                    {entry.target && (
+                      <p className="text-xs text-accent-cyan mt-0.5">
+                        {entry.target.name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openModal(entry)}
+                      className="p-1.5 text-text-muted hover:text-text-primary transition-colors"
                     >
-                      {tag.trim()}
-                    </Badge>
-                  ))}
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(entry.id)}
+                      className="p-1.5 text-text-muted hover:text-accent-red transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </Card>
-          ))}
+
+                <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+                  {entry.content}
+                </div>
+
+                {imgs.length > 0 && (
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
+                    {imgs.map((url) => (
+                      <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={url}
+                          alt="attachment"
+                          className="w-20 h-20 rounded-md object-cover border border-white/10 hover:border-accent-green/30 transition-colors"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {entry.tags && (
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-white/5">
+                    {entry.tags.split(",").map((tag) => (
+                      <Badge
+                        key={tag.trim()}
+                        className="bg-accent-purple/20 text-accent-purple border-accent-purple/30"
+                      >
+                        {tag.trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      <Modal
-        open={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
-        title={editing ? "Edit Entry" : "New Journal Entry"}
-      >
+      <Modal open={modalOpen} onClose={closeModal} title={editing ? "Edit Entry" : "New Journal Entry"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -204,6 +225,10 @@ export default function JournalPage() {
             />
           </div>
           <div>
+            <Label>Attachments</Label>
+            <ImageUpload images={images} onChange={setImages} />
+          </div>
+          <div>
             <Label htmlFor="tags">Tags</Label>
             <Input
               id="tags"
@@ -213,14 +238,7 @@ export default function JournalPage() {
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setModalOpen(false);
-                setEditing(null);
-              }}
-            >
+            <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
             <Button type="submit" disabled={isPending}>

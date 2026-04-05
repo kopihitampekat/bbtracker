@@ -38,6 +38,7 @@ model Finding {
   reportedAt  DateTime?
   triagedAt   DateTime?
   resolvedAt  DateTime?
+  images      String?  // JSON array of image URLs from Vercel Blob
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -49,6 +50,7 @@ model Journal {
   target    Target?  @relation(fields: [targetId], references: [id], onDelete: SetNull)
   content   String   // markdown
   tags      String?  // comma-separated tags
+  images    String?  // JSON array of image URLs from Vercel Blob
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Plus, Bug, Trash2, Pencil, ExternalLink } from "lucide-react";
+import { Plus, Bug, Trash2, Pencil, ExternalLink, ImageIcon } from "lucide-react";
 import {
   getFindings,
   getTargets,
@@ -20,6 +20,7 @@ import {
   Label,
   EmptyState,
 } from "@/components/ui";
+import { ImageUpload } from "@/components/image-upload";
 import {
   VULN_TYPES,
   SEVERITIES,
@@ -33,6 +34,11 @@ import {
 type FindingWithTarget = Awaited<ReturnType<typeof getFindings>>[number];
 type TargetOption = Awaited<ReturnType<typeof getTargets>>[number];
 
+function parseImages(images: string | null | undefined): string[] {
+  if (!images) return [];
+  try { return JSON.parse(images); } catch { return []; }
+}
+
 export default function FindingsPage() {
   const [findings, setFindings] = useState<FindingWithTarget[]>([]);
   const [targets, setTargets] = useState<TargetOption[]>([]);
@@ -40,6 +46,7 @@ export default function FindingsPage() {
   const [editing, setEditing] = useState<FindingWithTarget | null>(null);
   const [filterSeverity, setFilterSeverity] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [images, setImages] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
 
   const load = () => {
@@ -58,6 +65,18 @@ export default function FindingsPage() {
     return true;
   });
 
+  const openModal = (finding: FindingWithTarget | null) => {
+    setEditing(finding);
+    setImages(finding ? parseImages(finding.images) : []);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setImages([]);
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -71,6 +90,7 @@ export default function FindingsPage() {
       endpoint: (fd.get("endpoint") as string) || undefined,
       reportUrl: (fd.get("reportUrl") as string) || undefined,
       poc: (fd.get("poc") as string) || undefined,
+      images: images.length > 0 ? JSON.stringify(images) : undefined,
     };
 
     startTransition(async () => {
@@ -79,8 +99,7 @@ export default function FindingsPage() {
       } else {
         await createFinding(data);
       }
-      setModalOpen(false);
-      setEditing(null);
+      closeModal();
       load();
     });
   };
@@ -102,12 +121,7 @@ export default function FindingsPage() {
             Track your vulnerability discoveries
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setModalOpen(true);
-          }}
-        >
+        <Button onClick={() => openModal(null)}>
           <Plus className="w-4 h-4" /> Add Finding
         </Button>
       </div>
@@ -147,77 +161,91 @@ export default function FindingsPage() {
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((f) => (
-            <Card key={f.id} className="flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-medium truncate">{f.title}</h3>
+          {filtered.map((f) => {
+            const imgs = parseImages(f.images);
+            return (
+              <Card key={f.id} className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-medium truncate">{f.title}</h3>
+                    {imgs.length > 0 && (
+                      <ImageIcon className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={SEVERITY_COLORS[f.severity]}>
+                      {f.severity}
+                    </Badge>
+                    <Badge className={STATUS_COLORS[f.status]}>
+                      {f.status}
+                    </Badge>
+                    <span className="text-xs text-text-muted uppercase">
+                      {f.vulnType}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      {f.target?.name}
+                    </span>
+                  </div>
+                  {imgs.length > 0 && (
+                    <div className="flex gap-2 mt-2">
+                      {imgs.slice(0, 4).map((url) => (
+                        <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={url}
+                            alt="evidence"
+                            className="w-16 h-16 rounded-md object-cover border border-white/10 hover:border-accent-green/30 transition-colors"
+                          />
+                        </a>
+                      ))}
+                      {imgs.length > 4 && (
+                        <span className="text-xs text-text-muted flex items-center">
+                          +{imgs.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className={SEVERITY_COLORS[f.severity]}>
-                    {f.severity}
-                  </Badge>
-                  <Badge className={STATUS_COLORS[f.status]}>
-                    {f.status}
-                  </Badge>
-                  <span className="text-xs text-text-muted uppercase">
-                    {f.vulnType}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    {f.target?.name}
-                  </span>
+
+                <div className="text-right shrink-0">
+                  {f.bounty > 0 && (
+                    <p className="text-accent-green font-semibold">
+                      {formatCurrency(f.bounty)}
+                    </p>
+                  )}
+                  <p className="text-xs text-text-muted">{formatDate(f.foundAt)}</p>
                 </div>
-              </div>
 
-              <div className="text-right shrink-0">
-                {f.bounty > 0 && (
-                  <p className="text-accent-green font-semibold">
-                    {formatCurrency(f.bounty)}
-                  </p>
-                )}
-                <p className="text-xs text-text-muted">{formatDate(f.foundAt)}</p>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                {f.reportUrl && (
-                  <a
-                    href={f.reportUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                <div className="flex items-center gap-1 shrink-0">
+                  {f.reportUrl && (
+                    <a
+                      href={f.reportUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 text-text-muted hover:text-text-primary transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => openModal(f)}
                     className="p-1.5 text-text-muted hover:text-text-primary transition-colors"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-                <button
-                  onClick={() => {
-                    setEditing(f);
-                    setModalOpen(true);
-                  }}
-                  className="p-1.5 text-text-muted hover:text-text-primary transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleDelete(f.id)}
-                  className="p-1.5 text-text-muted hover:text-accent-red transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </Card>
-          ))}
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(f.id)}
+                    className="p-1.5 text-text-muted hover:text-accent-red transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      <Modal
-        open={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
-        title={editing ? "Edit Finding" : "Add Finding"}
-      >
+      <Modal open={modalOpen} onClose={closeModal} title={editing ? "Edit Finding" : "Add Finding"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="title">Title *</Label>
@@ -308,15 +336,12 @@ export default function FindingsPage() {
               defaultValue={editing?.poc || ""}
             />
           </div>
+          <div>
+            <Label>Screenshots / Evidence</Label>
+            <ImageUpload images={images} onChange={setImages} />
+          </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setModalOpen(false);
-                setEditing(null);
-              }}
-            >
+            <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
             <Button type="submit" disabled={isPending}>

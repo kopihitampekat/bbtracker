@@ -74,6 +74,7 @@ export async function createFinding(data: {
   endpoint?: string;
   reportUrl?: string;
   reportedAt?: Date | null;
+  images?: string;
 }) {
   await prisma.finding.create({ data });
   revalidatePath("/findings");
@@ -95,6 +96,7 @@ export async function updateFinding(
     reportedAt?: Date | null;
     triagedAt?: Date | null;
     resolvedAt?: Date | null;
+    images?: string;
   }
 ) {
   await prisma.finding.update({ where: { id }, data });
@@ -122,6 +124,7 @@ export async function createJournal(data: {
   targetId?: string | null;
   tags?: string;
   date?: Date;
+  images?: string;
 }) {
   await prisma.journal.create({ data });
   revalidatePath("/journal");
@@ -135,6 +138,7 @@ export async function updateJournal(
     targetId?: string | null;
     tags?: string;
     date?: Date;
+    images?: string;
   }
 ) {
   await prisma.journal.update({ where: { id }, data });
